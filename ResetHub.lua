@@ -5435,34 +5435,7 @@ for _, item in ipairs(EmoteList) do
     end)
 end
 
-AddFeatureButton(TabEmotes, 'Play Equipped Emotes', function()
-    local hum = GetEmoteHumanoid()
-    if not hum then Notify('Emote: karakter hazır değil'); return end
-    local desc
-    if not pcall(function() desc = hum:GetAppliedDescription() end) or not desc then
-        Notify('HumanoidDescription bulunamadı')
-        return
-    end
-    local list
-    if not pcall(function() list = desc:GetEquippedEmotes() end) or type(list) ~= 'table' or #list == 0 then
-        Notify('Takılı emote bulunamadı')
-        return
-    end
-    local pick = list[math.random(1, #list)]
-    local name = type(pick) == 'table' and pick.Name or pick
-    if name then PlayRequestedEmote(name) end
-end)
 
-AddFeatureButton(TabEmotes, 'Open Emote Wheel', function()
-    local ok, result = pcall(function()
-        return StarterGui:SetCore('EmoteMenuOpen', true)
-    end)
-    if ok and result ~= false then
-        Notify('Emote menüsü açıldı')
-    else
-        Notify('Emote menüsü bu oyunda kullanılamıyor')
-    end
-end)
 
 AddFeatureButton(TabEmotes, 'Stop Emote', StopActiveEmote)
 
@@ -6236,6 +6209,384 @@ pcall(function()
         end)
     end
 end)
+
+
+-- =========================================================
+-- INFINITE-YIELD-INSPIRED ADDITIONS (FUNCTIONALITY ADAPTED)
+-- These are original additions based on the attached example's feature set.
+-- Existing ResetHub code above is intentionally left untouched.
+-- =========================================================
+
+-- Movement & Physics: CFrame Fly
+AddFeatureButton(TabMove, 'IY CFrame Fly', function()
+    _G.ResetHubIY_CFrameFly = not _G.ResetHubIY_CFrameFly
+    local char = GetCharacter()
+    local hum = GetHumanoid()
+    local root = GetRoot()
+    if not char or not hum or not root then return end
+
+    if _G.ResetHubIY_CFrameFly then
+        pcall(function() hum.PlatformStand = true end)
+        SetFeatureConnection('IY_CFrameFly', true, RunService.Heartbeat, function(dt)
+            local c = GetCharacter()
+            local h = GetHumanoid()
+            local r = GetRoot()
+            if not c or not h or not r or not _G.ResetHubIY_CFrameFly then
+                SetFeatureConnection('IY_CFrameFly', false)
+                return
+            end
+            local camera = workspace.CurrentCamera
+            if not camera then return end
+            local dir = h.MoveDirection
+            if dir.Magnitude <= 0.01 then return end
+            local flatLook = Vector3.new(camera.CFrame.LookVector.X, 0, camera.CFrame.LookVector.Z)
+            local flatRight = Vector3.new(camera.CFrame.RightVector.X, 0, camera.CFrame.RightVector.Z)
+            if flatLook.Magnitude > 0 then flatLook = flatLook.Unit end
+            if flatRight.Magnitude > 0 then flatRight = flatRight.Unit end
+            local inputDir = Vector3.zero
+            if UserInputService:IsKeyDown(Enum.KeyCode.W) then inputDir = inputDir + flatLook end
+            if UserInputService:IsKeyDown(Enum.KeyCode.S) then inputDir = inputDir - flatLook end
+            if UserInputService:IsKeyDown(Enum.KeyCode.A) then inputDir = inputDir - flatRight end
+            if UserInputService:IsKeyDown(Enum.KeyCode.D) then inputDir = inputDir + flatRight end
+            if inputDir.Magnitude > 0 then
+                local speed = math.max(1, tonumber(_G.FlySpeedValue) or 50)
+                pcall(function() r.CFrame = r.CFrame + inputDir.Unit * speed * dt end)
+            end
+        end)
+    else
+        SetFeatureConnection('IY_CFrameFly', false)
+        pcall(function() hum.PlatformStand = false end)
+    end
+end)
+
+-- Movement & Physics: Vehicle/Body Fly style
+AddFeatureButton(TabMove, 'IY Vehicle Fly', function()
+    _G.ResetHubIY_VehicleFly = not _G.ResetHubIY_VehicleFly
+    local hum = GetHumanoid()
+    local root = GetRoot()
+    if not hum or not root then return end
+    local old = root:FindFirstChild('ResetHub_IY_VehicleFly')
+    if old then pcall(function() old:Destroy() end) end
+    if not _G.ResetHubIY_VehicleFly then
+        pcall(function() hum.PlatformStand = false end)
+        SetFeatureConnection('IY_VehicleFly', false)
+        return
+    end
+    local bv = Instance.new('BodyVelocity')
+    bv.Name = 'ResetHub_IY_VehicleFly'
+    bv.MaxForce = Vector3.new(1e6, 1e6, 1e6)
+    bv.P = 15000
+    bv.Velocity = Vector3.zero
+    bv.Parent = root
+    pcall(function() hum.PlatformStand = true end)
+    SetFeatureConnection('IY_VehicleFly', true, RunService.RenderStepped, function()
+        if not _G.ResetHubIY_VehicleFly then return end
+        local h = GetHumanoid()
+        local r = GetRoot()
+        local camera = workspace.CurrentCamera
+        if not h or not r or not camera or not bv.Parent then return end
+        local dir = Vector3.zero
+        if UserInputService:IsKeyDown(Enum.KeyCode.W) then dir = dir + camera.CFrame.LookVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.S) then dir = dir - camera.CFrame.LookVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.A) then dir = dir - camera.CFrame.RightVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.D) then dir = dir + camera.CFrame.RightVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.Space) then dir = dir + Vector3.yAxis end
+        if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then dir = dir - Vector3.yAxis end
+        if dir.Magnitude > 0.01 then dir = dir.Unit end
+        bv.Velocity = dir * math.max(1, tonumber(_G.FlySpeedValue) or 50)
+    end)
+end)
+
+-- Movement & Physics: Swim
+AddFeatureButton(TabMove, 'IY Swim', function()
+    _G.ResetHubIY_Swim = not _G.ResetHubIY_Swim
+    local hum = GetHumanoid()
+    if not hum then return end
+    if _G.ResetHubIY_Swim then
+        _G.ResetHubIY_OldGravity = workspace.Gravity
+        workspace.Gravity = 0
+        pcall(function() hum:ChangeState(Enum.HumanoidStateType.Swimming) end)
+        SetFeatureConnection('IY_Swim', true, RunService.Heartbeat, function()
+            if not _G.ResetHubIY_Swim then return end
+            local h = GetHumanoid()
+            local r = GetRoot()
+            if not h or not r then return end
+            local cam = workspace.CurrentCamera
+            local look = cam and cam.CFrame.LookVector or Vector3.zAxis
+            local dir = h.MoveDirection
+            if dir.Magnitude > 0.01 then
+                r.AssemblyLinearVelocity = dir * math.max(1, tonumber(_G.FlySpeedValue) or 50)
+            elseif UserInputService:IsKeyDown(Enum.KeyCode.Space) then
+                r.AssemblyLinearVelocity = look * math.max(1, tonumber(_G.FlySpeedValue) or 50)
+            else
+                r.AssemblyLinearVelocity = Vector3.zero
+            end
+        end)
+    else
+        SetFeatureConnection('IY_Swim', false)
+        pcall(function() workspace.Gravity = _G.ResetHubIY_OldGravity or OriginalGravity end)
+    end
+end)
+
+-- Player: Shift Lock availability
+AddFeatureButton(TabPlayer, 'Enable Shift Lock', function()
+    _G.ResetHubIY_ShiftLock = not _G.ResetHubIY_ShiftLock
+    if _G.ResetHubIY_ShiftLock then
+        pcall(function() LocalPlayer.DevEnableMouseLock = true end)
+        pcall(function()
+            LocalPlayer.CameraMode = Enum.CameraMode.Classic
+            LocalPlayer.CameraMinZoomDistance = math.max(0.5, LocalPlayer.CameraMinZoomDistance)
+        end)
+    else
+        pcall(function() LocalPlayer.DevEnableMouseLock = false end)
+    end
+end)
+
+-- Teleport: single named-in-session waypoint, modeled after the example's waypoint flow.
+AddFeatureButton(TabTeleport, 'Save IY Waypoint', function()
+    local root = GetRoot()
+    if root then
+        _G.ResetHubIY_Waypoint = root.CFrame
+        Notify('IY Waypoint saved')
+    end
+end)
+
+AddFeatureButton(TabTeleport, 'Goto IY Waypoint', function()
+    local root = GetRoot()
+    local waypoint = _G.ResetHubIY_Waypoint
+    if root and waypoint then
+        pcall(function() root.CFrame = waypoint end)
+    else
+        Notify('No IY waypoint saved')
+    end
+end)
+
+AddFeatureButton(TabTeleport, 'Tween To IY Waypoint', function()
+    local root = GetRoot()
+    local waypoint = _G.ResetHubIY_Waypoint
+    if root and waypoint then
+        local duration = math.max(0.1, tonumber(_G.ResetHubIY_TweenSpeed) or 1)
+        SetFeatureConnection('IY_WaypointTween', false)
+        local tween = TweenService:Create(root, TweenInfo.new(duration, Enum.EasingStyle.Linear), {CFrame = waypoint})
+        _G.ResetHubIY_WaypointTween = tween
+        tween:Play()
+    else
+        Notify('No IY waypoint saved')
+    end
+end)
+
+AddFeatureSlider(TabTeleport, 'IY Waypoint Tween Speed', 0.1, 10, 1, function(val)
+    _G.ResetHubIY_TweenSpeed = math.max(0.1, tonumber(val) or 1)
+end)
+
+AddFeatureButton(TabTeleport, 'Walk To IY Waypoint', function()
+    local hum = GetHumanoid()
+    local waypoint = _G.ResetHubIY_Waypoint
+    if hum and waypoint then
+        pcall(function() hum.WalkToPoint = waypoint.Position end)
+    else
+        Notify('No IY waypoint saved')
+    end
+end)
+
+-- Visuals: part-name ESP, adapted from the example's part ESP behavior.
+AddFeatureButton(TabVisuals, 'IY Part ESP', function()
+    _G.ResetHubIY_PartESP = not _G.ResetHubIY_PartESP
+    if not _G.ResetHubIY_PartESP then
+        for _, obj in ipairs(workspace:GetDescendants()) do
+            if obj:IsA('BoxHandleAdornment') and obj.Name == 'ResetHub_IY_PESP' then
+                pcall(function() obj:Destroy() end)
+            end
+        end
+        SetFeatureConnection('IY_PartESP', false)
+        return
+    end
+    SetFeatureConnection('IY_PartESP', false)
+    SetFeatureConnection('IY_PartESP', true, workspace.DescendantAdded, function(obj)
+        if not _G.ResetHubIY_PartESP then return end
+        if obj:IsA('BasePart') and obj.Name:lower() == string.lower(tostring(_G.ResetHubIY_PartName or '')) and obj:FindFirstChild('ResetHub_IY_PESP') == nil then
+            local a = Instance.new('BoxHandleAdornment')
+            a.Name = 'ResetHub_IY_PESP'
+            a.Adornee = obj
+            a.AlwaysOnTop = true
+            a.ZIndex = 10
+            a.Size = obj.Size
+            a.Transparency = 0.25
+            a.Color3 = Color3.fromRGB(0, 255, 0)
+            a.Parent = obj
+        end
+    end)
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj:IsA('BasePart') and obj.Name:lower() == string.lower(tostring(_G.ResetHubIY_PartName or '')) and not obj:FindFirstChild('ResetHub_IY_PESP') then
+            local a = Instance.new('BoxHandleAdornment')
+            a.Name = 'ResetHub_IY_PESP'
+            a.Adornee = obj
+            a.AlwaysOnTop = true
+            a.ZIndex = 10
+            a.Size = obj.Size
+            a.Transparency = 0.25
+            a.Color3 = Color3.fromRGB(0, 255, 0)
+            a.Parent = obj
+        end
+    end
+    Notify('Set part name with chat: :iypartesp PartName')
+end)
+
+-- Other: local GUI visibility toggles, matching the example's enable/disable GUI utility idea.
+AddFeatureButton(TabOther, 'IY Hide Roblox GUIs', function()
+    _G.ResetHubIY_GuisHidden = true
+    pcall(function()
+        for _, guiType in ipairs(Enum.CoreGuiType:GetEnumItems()) do
+            StarterGui:SetCoreGuiEnabled(guiType, false)
+        end
+    end)
+end)
+
+AddFeatureButton(TabOther, 'IY Show Roblox GUIs', function()
+    _G.ResetHubIY_GuisHidden = false
+    pcall(function()
+        for _, guiType in ipairs(Enum.CoreGuiType:GetEnumItems()) do
+            StarterGui:SetCoreGuiEnabled(guiType, true)
+        end
+    end)
+end)
+
+-- Other: client FPS cap helper from the same feature family, executor-dependent.
+AddFeatureSlider(TabOther, 'IY FPS Cap', 15, 240, 60, function(val)
+    _G.ResetHubIY_FPSCap = val
+    local cap = setfpscap
+    if type(cap) == 'function' then pcall(cap, val) end
+end)
+
+-- Other: local anti-kick guard, only when the executor exposes hooks.
+AddFeatureButton(TabOther, 'IY Client Anti Kick', function()
+    _G.ResetHubIY_AntiKick = not _G.ResetHubIY_AntiKick
+    if not _G.ResetHubIY_AntiKick then return end
+    if type(hookmetamethod) ~= 'function' or type(newcclosure) ~= 'function' then
+        Notify('Client Anti Kick: executor hook API unavailable')
+        _G.ResetHubIY_AntiKick = false
+        return
+    end
+    if _G.ResetHubIY_AntiKickInstalled then return end
+    _G.ResetHubIY_AntiKickInstalled = true
+    local oldNamecall
+    oldNamecall = hookmetamethod(game, '__namecall', newcclosure(function(self, ...)
+        local method = getnamecallmethod and getnamecallmethod() or ''
+        if _G.ResetHubIY_AntiKick and self == LocalPlayer and string.lower(method) == 'kick' then
+            return nil
+        end
+        return oldNamecall(self, ...)
+    end))
+end)
+
+-- Tools: click teleport tool (local/client-side utility).
+AddButton(TabTools, 'IY Click Teleport Tool', function()
+    local backpack = LocalPlayer:FindFirstChildOfClass('Backpack')
+    if not backpack then return end
+    local old = backpack:FindFirstChild('IY Click Teleport') or (GetCharacter() and GetCharacter():FindFirstChild('IY Click Teleport'))
+    if old then old:Destroy() return end
+    local tool = Instance.new('Tool')
+    tool.Name = 'IY Click Teleport'
+    tool.ToolTip = 'Click to teleport'
+    tool.RequiresHandle = false
+    tool.CanBeDropped = false
+    tool.Activated:Connect(function()
+        local root = GetRoot()
+        local hit = Mouse.Hit
+        if root and hit then pcall(function() root.CFrame = hit + Vector3.new(0, 3, 0) end) end
+    end)
+    tool.Parent = backpack
+end)
+
+-- Tools: click delete utility, adapted as a local tool.
+AddButton(TabTools, 'IY Click Delete Tool', function()
+    local backpack = LocalPlayer:FindFirstChildOfClass('Backpack')
+    if not backpack then return end
+    local old = backpack:FindFirstChild('IY Click Delete') or (GetCharacter() and GetCharacter():FindFirstChild('IY Click Delete'))
+    if old then old:Destroy() return end
+    local tool = Instance.new('Tool')
+    tool.Name = 'IY Click Delete'
+    tool.ToolTip = 'Click a local part to remove it'
+    tool.RequiresHandle = false
+    tool.CanBeDropped = false
+    tool.Activated:Connect(function()
+        local hit = Mouse.Target
+        if hit and hit:IsA('BasePart') and not hit:IsDescendantOf(GetCharacter() or workspace) then
+            pcall(function() hit:Destroy() end)
+        elseif hit and hit:IsA('BasePart') then
+            pcall(function() hit:Destroy() end)
+        end
+    end)
+    tool.Parent = backpack
+end)
+
+-- Chat aliases for the newly-added source-inspired features.
+_G.ResetHubIYChatAliases = {
+    enableshiftlock = 'Enable Shift Lock',
+    shiftlock = 'Enable Shift Lock',
+    iycframefly = 'IY CFrame Fly',
+    cframefly = 'IY CFrame Fly',
+    vehiclefly = 'IY Vehicle Fly',
+    vfly = 'IY Vehicle Fly',
+    iyswim = 'IY Swim',
+    swim = 'IY Swim',
+    saveiywaypoint = 'Save IY Waypoint',
+    gotoiywaypoint = 'Goto IY Waypoint',
+    twiywaypoint = 'Tween To IY Waypoint',
+    walkiywaypoint = 'Walk To IY Waypoint',
+    hideguis = 'IY Hide Roblox GUIs',
+    showguis = 'IY Show Roblox GUIs',
+    iypartesp = 'IY Part ESP',
+    clientantikick = 'IY Client Anti Kick',
+    clicktp = 'IY Click Teleport Tool',
+    clickdelete = 'IY Click Delete Tool'
+}
+
+-- Expand the existing chat feature resolver without replacing its behavior.
+local _ResetHubFindChatFeatureOriginal = FindChatFeature
+FindChatFeature = function(command)
+    local normalized = NormalizeResetHubCommand(command)
+    local aliasTarget = _G.ResetHubIYChatAliases and _G.ResetHubIYChatAliases[normalized]
+    if aliasTarget and KeybindTargets[aliasTarget] then
+        return aliasTarget
+    end
+    return _ResetHubFindChatFeatureOriginal(command)
+end
+
+-- Parameterized source-inspired commands.
+local _ResetHubChatRouterOriginal = ResetHubChatCommandRouter
+ResetHubChatCommandRouter = function(message)
+    local parts = ResetHubChatArgs(message)
+    local cmd = string.lower(parts[1] or '')
+    if cmd == ':iypartesp' then
+        _G.ResetHubIY_PartName = table.concat(parts, ' ', 2)
+        if _G.ResetHubIY_PartESP then
+            RunChatFeature('IY Part ESP')
+            RunChatFeature('IY Part ESP')
+        end
+        Notify('IY Part ESP name: ' .. tostring(_G.ResetHubIY_PartName))
+        return true
+    end
+    if cmd == ':iyflyspeed' and tonumber(parts[2]) then
+        _G.FlySpeedValue = math.clamp(tonumber(parts[2]), 1, 500)
+        Notify('IY Fly Speed: ' .. tostring(_G.FlySpeedValue))
+        return true
+    end
+    if cmd == ':vflyspeed' and tonumber(parts[2]) then
+        _G.FlySpeedValue = math.clamp(tonumber(parts[2]), 1, 500)
+        Notify('Vehicle Fly Speed: ' .. tostring(_G.FlySpeedValue))
+        return true
+    end
+    if cmd == ':fpscap' and tonumber(parts[2]) then
+        local cap = math.clamp(tonumber(parts[2]), 15, 240)
+        _G.ResetHubIY_FPSCap = cap
+        if type(setfpscap) == 'function' then pcall(setfpscap, cap) end
+        Notify('FPS Cap: ' .. tostring(cap))
+        return true
+    end
+    return _ResetHubChatRouterOriginal(message)
+end
+_G.ResetHubChatCommand = ResetHubChatCommandRouter
 
 Notify("Reset hub by ssaggajh Loaded! (Right-Ctrl / Q to Fly)")
 -- ResetHub v71: requested-only fixes for SilentAim, KillAura, Auto Prompt Fire, Prompt Duration 0, Auto Rotate, Recenter Camera, and chat routing.
